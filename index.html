@@ -161,6 +161,7 @@ function spawn() {
     color: shape.color,
     x: Math.floor((COLS - w) / 2),   // по центру сверху
     y: 0,
+    rot: 0,                          // номер поворота, 0..3
   };
   if (collides(p, 0, 0)) { endGame(); return; }
   piece = p;
@@ -190,12 +191,30 @@ function move(dx) {
 function rotate() {
   if (!piece || gameOver) return;
   const rotated = rotateCW(piece.cells);
-  // простой wall-kick: пробуем на месте, затем сдвиги влево/вправо
-  for (const dx of [0, -1, 1, -2, 2]) {
-    if (!collides(piece, dx, 0, rotated)) {
-      piece.cells = rotated;
-      piece.x += dx;
-      return;
+  const w = piece.cells[0].length, h = piece.cells.length;
+  // Поворот вокруг центра. Координата фигуры — её левый верхний угол,
+  // а рамка при повороте меняет ширину с высотой (w×h → h×w). Без поправки
+  // угол остаётся на месте и фигура будто крутится вокруг него; сдвигаем
+  // так, чтобы совпали центры старой и новой рамки.
+  // У фигур вроде 2×3 центр приходится на полклетки, и округление всегда
+  // в одну сторону уводило бы фигуру всё дальше при каждом повороте.
+  // Чередуем округление по чётности поворота — тогда пара поворотов
+  // возвращает фигуру ровно туда, где она была.
+  const round = piece.rot % 2 === 0 ? Math.floor : Math.ceil;
+  const cx = round((w - h) / 2);
+  const cy = round((h - w) / 2);
+  // wall-kick: если на новом месте не помещается — пробуем рядом
+  for (const dy of [0, 1, 2, -1, -2]) {
+    for (const dx of [0, -1, 1, -2, 2]) {
+      const probe = { x: piece.x + cx + dx, y: piece.y + cy + dy, cells: rotated };
+      if (probe.y < 0) continue;   // выше поля фигуру не поднимаем
+      if (!collides(probe, 0, 0, rotated)) {
+        piece.cells = rotated;
+        piece.x = probe.x;
+        piece.y = probe.y;
+        piece.rot = (piece.rot + 1) % 4;
+        return;
+      }
     }
   }
 }
