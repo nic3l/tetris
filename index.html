@@ -135,6 +135,7 @@ const overlayEl = document.getElementById('overlay');
 const stageEl = document.getElementById('stage');
 
 let grid, piece, score, gameOver, softDrop, slamming, dropAcc, lastTs, rafId;
+let slamHeld = false;   // X/Ч зажата — до отпускания новых сбросов не будет
 // Анимация очистки строк: null либо {phase:'shrink'|'fall', t, rows|shifts}.
 // Пока она идёт, игра стоит: фигура не падает и новая не появляется.
 let anim = null;
@@ -434,7 +435,11 @@ document.addEventListener('keydown', e => {
   // e.repeat — автоповтор от зажатой клавиши. Его игнорируем, иначе он сам
   // снова включил бы ускорение сразу после сброса в spawn().
   else if (action === 'down' && !e.repeat) softDrop = true;
-  else if (action === 'slam' && !slamming) {
+  // Сброс срабатывает строго на нажатие: пока клавишу не отпустили,
+  // повторных срабатываний нет — иначе зажатый X ронял бы каждую
+  // следующую фигуру, ведь spawn() снимает slamming.
+  else if (action === 'slam' && !slamHeld) {
+    slamHeld = true;
     slamming = true;
     // Обнуляем накопитель: в нём лежит время, накопленное под медленный
     // интервал. Без сброса оно тут же тратится пачкой шагов по 60 мс,
@@ -444,7 +449,9 @@ document.addEventListener('keydown', e => {
 });
 
 document.addEventListener('keyup', e => {
-  if (actionOf(e) === 'down') softDrop = false;
+  const action = actionOf(e);
+  if (action === 'down') softDrop = false;
+  else if (action === 'slam') slamHeld = false;   // теперь X можно нажать снова
 });
 
 document.getElementById('restart').addEventListener('click', start);
