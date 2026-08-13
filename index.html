@@ -378,7 +378,13 @@ function draw() {
       ? 0
       : Math.min(1, dropAcc / dropInterval()) * CELL;
 
-    drawPiece(piece, piece.y, offset, 1, 1);
+    // Во время льготы рамка мигает — видно, что фигура ждёт, а не зависла.
+    // Два полных цикла за льготу: начинаем с яркой вспышки.
+    const glow = grace > 0
+      ? 0.3 + 0.7 * (0.5 + 0.5 * Math.cos((GRACE_MS - grace) / GRACE_MS * Math.PI * 4))
+      : 0.55;
+
+    drawPiece(piece, piece.y, offset, 1, 1, glow);
   }
 
   // Перелёт вниз: наверху фигура тает и ужимается, внизу проявляется и растёт.
@@ -391,11 +397,11 @@ function draw() {
 
 // Рисует фигуру целиком: y задаётся отдельно от piece.y, чтобы одну и ту же
 // фигуру можно было показать сразу в двух местах во время перелёта.
-function drawPiece(pc, atY, offset, alpha, scale) {
+function drawPiece(pc, atY, offset, alpha, scale, glow = 0.55) {
   ctx.globalAlpha = alpha;
   for (let y = 0; y < pc.cells.length; y++)
     for (let x = 0; x < pc.cells[y].length; x++)
-      if (pc.cells[y][x]) drawCell(pc.x + x, atY + y, pc.color, offset, true, scale);
+      if (pc.cells[y][x]) drawCell(pc.x + x, atY + y, pc.color, offset, true, scale, glow);
   ctx.globalAlpha = 1;
 }
 
@@ -413,7 +419,7 @@ function dim(hex) {
   return dimCache[hex];
 }
 
-function drawCell(x, y, color, offset = 0, active = false, scale = 1) {
+function drawCell(x, y, color, offset = 0, active = false, scale = 1, glow = 0.55) {
   if (y < 0) return;
   // при scale < 1 блок ужимается к центру своей клетки
   const size = (CELL - 4) * scale;
@@ -426,7 +432,7 @@ function drawCell(x, y, color, offset = 0, active = false, scale = 1) {
   ctx.fillRect(px, py, size, 6 * scale);
   // светлая рамка только у активной — она читается как «эта под управлением»
   if (active) {
-    ctx.strokeStyle = 'rgba(255,255,255,.55)';
+    ctx.strokeStyle = `rgba(255,255,255,${glow})`;
     ctx.lineWidth = 2;
     ctx.strokeRect(px + 1, py + 1, size - 2, size - 2);
   }
