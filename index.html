@@ -84,9 +84,8 @@
     <div id="help">
       <b>A</b> <b>←</b> — влево<br>
       <b>D</b> <b>→</b> — вправо<br>
-      <b>S</b> — ускорить<br>
       <b>W</b> <b>↑</b> — поворот<br>
-      <b>X</b> <b>↓</b> — переместить вниз
+      <b>S</b> <b>X</b> <b>↓</b> — переместить вниз
     </div>
   </div>
 </div>
@@ -102,7 +101,6 @@ const COLS = 10;
 const ROWS = 15;
 const CELL = 40;
 const DROP_MS = 1000;      // стартовая скорость: 1 клетка в секунду
-const FAST_FACTOR = 5;     // ускорение на S
 const SPEED_STEP = 30;     // каждые 30 очков...
 const SPEED_MULT = 1.25;   // ...скорость падения умножается на 1.25
 const MIN_DROP_MS = 250;   // предел разгона: не быстрее 250 мс на клетку
@@ -134,8 +132,8 @@ const finalScoreEl = document.getElementById('finalScore');
 const overlayEl = document.getElementById('overlay');
 const stageEl = document.getElementById('stage');
 
-let grid, piece, score, gameOver, softDrop, dropAcc, lastTs, rafId;
-let slamHeld = false;   // X/Ч зажата — до отпускания новых сбросов не будет
+let grid, piece, score, gameOver, dropAcc, lastTs, rafId;
+const slamKeys = new Set();   // зажатые клавиши телепорта: до отпускания не повторяем
 // Анимация очистки строк: null либо {phase:'shrink'|'fall', t, rows|shifts}.
 // Пока она идёт, игра стоит: фигура не падает и новая не появляется.
 let anim = null;
@@ -167,8 +165,6 @@ function spawn() {
   if (collides(p, 0, 0)) { endGame(); return; }
   piece = p;
   dropAcc = 0;      // новая фигура начинает клетку с нуля, без визуального рывка
-  softDrop = false; // ускорение сбрасывается: нужно отпустить S/Ы и нажать заново,
-                    // иначе свежая фигура улетала бы вниз до того, как её заметишь
 }
 
 function collides(p, dx, dy, cells = p.cells) {
@@ -408,7 +404,7 @@ function loop(ts) {
   }
 
   const interval = dropInterval();
-  dropAcc += dt * (softDrop ? FAST_FACTOR : 1);
+  dropAcc += dt;
   while (dropAcc >= interval) {
     dropAcc -= interval;
     step();
@@ -450,7 +446,6 @@ function start() {
   grid = emptyGrid();
   score = 0;
   gameOver = false;
-  softDrop = false;
   anim = null;
   dropAcc = 0;
   lastTs = null;
@@ -465,17 +460,23 @@ function start() {
 // Управление не зависит от раскладки: сначала смотрим на физическую
 // клавишу (e.code), затем на символ — латинский или кириллический.
 const ACTION_BY_CODE = {
-  KeyA: 'left', KeyD: 'right', KeyS: 'down', KeyW: 'rotate', KeyX: 'slam',
+  KeyA: 'left', KeyD: 'right', KeyW: 'rotate', KeyS: 'slam', KeyX: 'slam',
   // стрелки: вверх — поворот, вниз — телепорт до упора
   ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'rotate', ArrowDown: 'slam',
 };
 const ACTION_BY_CHAR = {
-  a: 'left',   d: 'right',  s: 'down',   w: 'rotate',  x: 'slam',
-  'ф': 'left', 'в': 'right', 'ы': 'down', 'ц': 'rotate', 'ч': 'slam',
+  a: 'left',   d: 'right',  w: 'rotate',  s: 'slam',   x: 'slam',
+  'ф': 'left', 'в': 'right', 'ц': 'rotate', 'ы': 'slam', 'ч': 'slam',
 };
 
 function actionOf(e) {
   return ACTION_BY_CODE[e.code] || ACTION_BY_CHAR[e.key.toLowerCase()] || null;
+}
+
+// Чем различаем зажатые клавиши: телепорт висит на трёх разных, и каждая
+// должна отпускаться сама по себе.
+function keyId(e) {
+  return e.code || e.key.toLowerCase();
 }
 
 document.addEventListener('keydown', e => {
@@ -486,21 +487,18 @@ document.addEventListener('keydown', e => {
   if (action === 'left') move(-1);
   else if (action === 'right') move(1);
   else if (action === 'rotate') rotate();
-  // e.repeat — автоповтор от зажатой клавиши. Его игнорируем, иначе он сам
-  // снова включил бы ускорение сразу после сброса в spawn().
-  else if (action === 'down' && !e.repeat) softDrop = true;
-  // Сброс срабатывает строго на нажатие: пока клавишу не отпустили,
-  // повторных срабатываний нет — иначе зажатый X ронял бы фигуру за фигурой.
-  else if (action === 'slam' && !slamHeld) {
-    slamHeld = true;
+  // Телепорт срабатывает строго на нажатие: пока клавишу не отпустили,
+  // повторных срабатываний нет — иначе зажатая клавиша роняла бы фигуру
+  // за фигурой.
+  else if (action === 'slam' && !slamKeys.has(keyId(e))) {
+    slamKeys.add(keyId(e));
     hardDrop();
   }
 });
 
 document.addEventListener('keyup', e => {
   const action = actionOf(e);
-  if (action === 'down') softDrop = false;
-  else if (action === 'slam') slamHeld = false;   // теперь X можно нажать снова
+  if (actionOf(e) === 'slam') slamKeys.delete(keyId(e));   // клавишу можно нажать снова
 });
 
 document.getElementById('restart').addEventListener('click', start);
