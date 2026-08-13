@@ -343,18 +343,31 @@ function start() {
   rafId = requestAnimationFrame(loop);
 }
 
+// Управление не зависит от раскладки: сначала смотрим на физическую
+// клавишу (e.code), затем на символ — латинский или кириллический.
+const ACTION_BY_CODE = { KeyA: 'left', KeyD: 'right', KeyS: 'down', KeyW: 'rotate' };
+const ACTION_BY_CHAR = {
+  a: 'left',   d: 'right',  s: 'down',   w: 'rotate',
+  'ф': 'left', 'в': 'right', 'ы': 'down', 'ц': 'rotate',
+};
+
+function actionOf(e) {
+  return ACTION_BY_CODE[e.code] || ACTION_BY_CHAR[e.key.toLowerCase()] || null;
+}
+
 document.addEventListener('keydown', e => {
-  const k = e.key.toLowerCase();
-  if (['a', 'd', 's', 'w'].includes(k)) e.preventDefault();
+  const action = actionOf(e);
+  if (!action) return;
+  e.preventDefault();
   if (gameOver) return;
-  if (k === 'a') move(-1);
-  else if (k === 'd') move(1);
-  else if (k === 'w') rotate();
-  else if (k === 's') softDrop = true;
+  if (action === 'left') move(-1);
+  else if (action === 'right') move(1);
+  else if (action === 'rotate') rotate();
+  else if (action === 'down') softDrop = true;
 });
 
 document.addEventListener('keyup', e => {
-  if (e.key.toLowerCase() === 's') softDrop = false;
+  if (actionOf(e) === 'down') softDrop = false;
 });
 
 document.getElementById('restart').addEventListener('click', start);
