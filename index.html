@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Тетрис 8×8</title>
+<title>Тетрис 10×15</title>
 <style>
   :root {
     --cell: 56px;
@@ -97,11 +97,14 @@
 </div>
 
 <script>
-const COLS = 8;
-const ROWS = 8;
-const CELL = 56;
-const DROP_MS = 1000;      // 1 клетка в секунду
+const COLS = 10;
+const ROWS = 15;
+const CELL = 40;
+const DROP_MS = 1000;      // стартовая скорость: 1 клетка в секунду
 const FAST_FACTOR = 5;     // ускорение на S
+const SPEED_STEP = 30;     // каждые 30 очков...
+const SPEED_MULT = 1.25;   // ...скорость падения умножается на 1.25
+const MIN_DROP_MS = 250;   // предел разгона: не быстрее 250 мс на клетку
 
 // Фигуры: матрица 1/0 + цвет.
 const SHAPES = [
@@ -153,6 +156,7 @@ function spawn() {
   };
   if (collides(p, 0, 0)) { endGame(); return; }
   piece = p;
+  dropAcc = 0;   // новая фигура начинает клетку с нуля, без визуального рывка
 }
 
 function collides(p, dx, dy, cells = p.cells) {
@@ -212,7 +216,7 @@ function clearLines() {
   }
 }
 
-// Конец игры: где-то набрался столбик высотой 8 (вся колонка занята).
+// Конец игры: какая-то колонка заполнена на всю высоту поля (ROWS).
 function checkTopOut() {
   for (let x = 0; x < COLS; x++) {
     let full = true;
@@ -246,19 +250,33 @@ function draw() {
       if (grid[y][x]) drawCell(x, y, grid[y][x]);
 
   if (piece) {
+    // Плавность: между шагами сдвигаем фигуру вниз на долю клетки,
+    // пропорционально накопленному времени. У самой земли не сдвигаем,
+    // иначе блок визуально влезал бы в стакан.
+    const offset = collides(piece, 0, 1)
+      ? 0
+      : Math.min(1, dropAcc / dropInterval()) * CELL;
+
     for (let y = 0; y < piece.cells.length; y++)
       for (let x = 0; x < piece.cells[y].length; x++)
-        if (piece.cells[y][x]) drawCell(piece.x + x, piece.y + y, piece.color);
+        if (piece.cells[y][x]) drawCell(piece.x + x, piece.y + y, piece.color, offset);
   }
 }
 
-function drawCell(x, y, color) {
+function drawCell(x, y, color, offset = 0) {
   if (y < 0) return;
-  const px = x * CELL, py = y * CELL;
+  const px = x * CELL, py = y * CELL + offset;
   ctx.fillStyle = color;
   ctx.fillRect(px + 2, py + 2, CELL - 4, CELL - 4);
   ctx.fillStyle = 'rgba(255,255,255,.18)';
   ctx.fillRect(px + 2, py + 2, CELL - 4, 6);
+}
+
+// Текущая пауза между шагами вниз. Уровень считается прямо из счёта,
+// поэтому очистка сразу нескольких строк учитывается за один раз.
+function dropInterval() {
+  const level = Math.floor(score / SPEED_STEP);
+  return Math.max(MIN_DROP_MS, DROP_MS / Math.pow(SPEED_MULT, level));
 }
 
 function loop(ts) {
@@ -268,9 +286,10 @@ function loop(ts) {
   const dt = ts - lastTs;
   lastTs = ts;
 
+  const interval = dropInterval();
   dropAcc += dt * (softDrop ? FAST_FACTOR : 1);
-  while (dropAcc >= DROP_MS) {
-    dropAcc -= DROP_MS;
+  while (dropAcc >= interval) {
+    dropAcc -= interval;
     step();
     if (gameOver) break;
   }
