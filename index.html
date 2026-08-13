@@ -105,6 +105,7 @@ const FAST_FACTOR = 5;     // ускорение на S
 const SPEED_STEP = 30;     // каждые 30 очков...
 const SPEED_MULT = 1.25;   // ...скорость падения умножается на 1.25
 const MIN_DROP_MS = 250;   // предел разгона: не быстрее 250 мс на клетку
+const LOCK_DIM = 0.55;     // насколько гаснет блок, когда фигура застыла
 
 // Фигуры: матрица 1/0 + цвет.
 const SHAPES = [
@@ -245,9 +246,10 @@ function draw() {
     ctx.beginPath(); ctx.moveTo(0, i * CELL + .5); ctx.lineTo(canvas.width, i * CELL + .5); ctx.stroke();
   }
 
+  // Застывшие блоки — приглушённые, активная фигура — яркая.
   for (let y = 0; y < ROWS; y++)
     for (let x = 0; x < COLS; x++)
-      if (grid[y][x]) drawCell(x, y, grid[y][x]);
+      if (grid[y][x]) drawCell(x, y, dim(grid[y][x]), 0, false);
 
   if (piece) {
     // Плавность: между шагами сдвигаем фигуру вниз на долю клетки,
@@ -259,17 +261,38 @@ function draw() {
 
     for (let y = 0; y < piece.cells.length; y++)
       for (let x = 0; x < piece.cells[y].length; x++)
-        if (piece.cells[y][x]) drawCell(piece.x + x, piece.y + y, piece.color, offset);
+        if (piece.cells[y][x]) drawCell(piece.x + x, piece.y + y, piece.color, offset, true);
   }
 }
 
-function drawCell(x, y, color, offset = 0) {
+// Затемняем цвет застывшего блока. Кэш — цветов всего восемь,
+// а функция зовётся для каждой клетки в каждом кадре.
+const dimCache = {};
+function dim(hex) {
+  if (!dimCache[hex]) {
+    const n = parseInt(hex.slice(1), 16);
+    const k = LOCK_DIM;
+    dimCache[hex] = `rgb(${Math.round(((n >> 16) & 255) * k)},` +
+                    `${Math.round(((n >> 8) & 255) * k)},` +
+                    `${Math.round((n & 255) * k)})`;
+  }
+  return dimCache[hex];
+}
+
+function drawCell(x, y, color, offset = 0, active = false) {
   if (y < 0) return;
   const px = x * CELL, py = y * CELL + offset;
   ctx.fillStyle = color;
   ctx.fillRect(px + 2, py + 2, CELL - 4, CELL - 4);
-  ctx.fillStyle = 'rgba(255,255,255,.18)';
+  // блик сверху: у активной фигуры заметный, у застывшей — еле-еле
+  ctx.fillStyle = active ? 'rgba(255,255,255,.28)' : 'rgba(255,255,255,.07)';
   ctx.fillRect(px + 2, py + 2, CELL - 4, 6);
+  // светлая рамка только у активной — она читается как «эта под управлением»
+  if (active) {
+    ctx.strokeStyle = 'rgba(255,255,255,.55)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(px + 3, py + 3, CELL - 6, CELL - 6);
+  }
 }
 
 // Текущая пауза между шагами вниз. Уровень считается прямо из счёта,
