@@ -52,7 +52,7 @@
   #help { margin-top: 24px; font-size: 13px; line-height: 1.7; opacity: .5; }
   #help b { color: var(--text); font-weight: 600; }
 
-  #overlay, #pauseOverlay {
+  #overlay, #pauseOverlay, #startOverlay {
     position: fixed;
     inset: 0;
     display: none;
@@ -62,14 +62,41 @@
     gap: 18px;
     text-align: center;
   }
-  #overlay.show, #pauseOverlay.show { display: flex; }
+  #overlay.show, #pauseOverlay.show, #startOverlay.show { display: flex; }
+
+  #startOverlay { background: rgba(16, 19, 26, .72); }
+  #startOverlay .card {
+    max-width: 440px;
+    padding: 32px 36px 36px;
+    background: #161b27;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    text-align: left;
+  }
+  #startOverlay h1 {
+    margin: 0 0 14px;
+    font-size: 34px;
+    letter-spacing: .18em;
+    opacity: 1;
+  }
+  #startOverlay p { margin: 0 0 22px; font-size: 15px; line-height: 1.6; opacity: .7; }
+  .keys {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px 18px;
+    margin: 0 0 28px;
+    font-size: 14px;
+  }
+  .keys dt { font-weight: 600; white-space: nowrap; }
+  .keys dd { margin: 0; opacity: .6; }
+  #begin { width: 100%; }
   #overlay h1, #pauseOverlay h1 { margin: 0; font-size: 28px; font-weight: 600; opacity: .8; }
   #pauseOverlay h1 { font-size: 40px; letter-spacing: .04em; }
   #pauseOverlay .hint { font-size: 14px; opacity: .5; }
   #finalScore { font-size: 72px; font-weight: 700; line-height: 1; }
   #finalBest { font-size: 18px; opacity: .65; }
   #finalBest.record { opacity: 1; color: #f2c14e; font-weight: 600; }
-  #restart {
+  #restart, #begin {
     margin-top: 8px;
     padding: 12px 28px;
     font: inherit;
@@ -80,7 +107,7 @@
     border-radius: 999px;
     cursor: pointer;
   }
-  #restart:hover { opacity: .85; }
+  #restart:hover, #begin:hover { opacity: .85; }
 </style>
 </head>
 <body>
@@ -99,6 +126,24 @@
       <b>W</b> <b>↑</b> — поворот<br>
       <b>X</b> <b>↓</b> — переместить вниз
     </div>
+  </div>
+</div>
+
+<div id="startOverlay" class="show">
+  <div class="card">
+    <h1>ТЕТРИС</h1>
+    <p>Сверху падают фигуры из блоков, а ты крутишь их и раскладываешь так,
+       чтобы полностью заполнить горизонтальный ряд: заполненный ряд исчезает
+       и даёт&nbsp;очки. Игра идёт, пока фигуры не доросли до верха.</p>
+    <dl class="keys">
+      <dt>A &nbsp;←</dt><dd>влево</dd>
+      <dt>D &nbsp;→</dt><dd>вправо</dd>
+      <dt>W &nbsp;↑</dt><dd>повернуть</dd>
+      <dt>S</dt><dd>ускорить падение</dd>
+      <dt>X &nbsp;↓</dt><dd>сбросить вниз</dd>
+      <dt>Esc</dt><dd>пауза</dd>
+    </dl>
+    <button id="begin">НАЧАТЬ ИГРУ</button>
   </div>
 </div>
 
@@ -154,10 +199,12 @@ const finalScoreEl = document.getElementById('finalScore');
 const finalBestEl = document.getElementById('finalBest');
 const overlayEl = document.getElementById('overlay');
 const pauseEl = document.getElementById('pauseOverlay');
+const startEl = document.getElementById('startOverlay');
 const stageEl = document.getElementById('stage');
 
 let grid, piece, score, gameOver, paused, softDrop, dropAcc, lastTs, rafId;
 let grace = 0;   // сколько мс новая фигура ещё стоит неподвижно (высокий стакан)
+let atStartScreen = true;   // показана заставка, игра ещё не началась
 
 // Рекорд переживает перезагрузку страницы. localStorage может быть недоступен
 // (приватный режим, ограничения песочницы) — тогда рекорд живёт до закрытия вкладки.
@@ -521,6 +568,23 @@ function endGame() {
   stageEl.classList.add('over');
 }
 
+// Заставка: поле уже нарисовано, но игра не идёт, пока не нажали кнопку.
+function showStartScreen() {
+  atStartScreen = true;
+  grid = emptyGrid();
+  piece = null;
+  bestEl.textContent = best;
+  startEl.classList.add('show');
+  stageEl.classList.add('over');
+  draw();
+}
+
+function beginGame() {
+  atStartScreen = false;
+  startEl.classList.remove('show');
+  start();
+}
+
 function start() {
   grid = emptyGrid();
   score = 0;
@@ -564,6 +628,11 @@ function keyId(e) {
 }
 
 document.addEventListener('keydown', e => {
+  // На заставке игровые клавиши молчат, но начать можно с клавиатуры.
+  if (atStartScreen) {
+    if (e.key === 'Enter' || e.code === 'Space') { e.preventDefault(); beginGame(); }
+    return;
+  }
   if (e.code === 'Escape' || e.key === 'Escape') {
     e.preventDefault();
     togglePause();
@@ -595,8 +664,9 @@ document.addEventListener('keyup', e => {
 });
 
 document.getElementById('restart').addEventListener('click', start);
+document.getElementById('begin').addEventListener('click', beginGame);
 
-start();
+showStartScreen();
 </script>
 </body>
 </html>
