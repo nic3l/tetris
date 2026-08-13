@@ -107,7 +107,6 @@ const SPEED_STEP = 30;     // каждые 30 очков...
 const SPEED_MULT = 1.25;   // ...скорость падения умножается на 1.25
 const MIN_DROP_MS = 250;   // предел разгона: не быстрее 250 мс на клетку
 const LOCK_DIM = 0.55;     // насколько гаснет блок, когда фигура застыла
-const SLAM_MS = 60;        // сброс вниз по X/Ч: 60 мс на клетку
 const SHRINK_MS = 170;     // собранная строка сжимается
 const FALL_MS = 130;       // ...и всё, что над ней, съезжает вниз
 
@@ -134,7 +133,7 @@ const finalScoreEl = document.getElementById('finalScore');
 const overlayEl = document.getElementById('overlay');
 const stageEl = document.getElementById('stage');
 
-let grid, piece, score, gameOver, softDrop, slamming, dropAcc, lastTs, rafId;
+let grid, piece, score, gameOver, softDrop, dropAcc, lastTs, rafId;
 let slamHeld = false;   // X/Ч зажата — до отпускания новых сбросов не будет
 // Анимация очистки строк: null либо {phase:'shrink'|'fall', t, rows|shifts}.
 // Пока она идёт, игра стоит: фигура не падает и новая не появляется.
@@ -168,7 +167,6 @@ function spawn() {
   dropAcc = 0;      // новая фигура начинает клетку с нуля, без визуального рывка
   softDrop = false; // ускорение сбрасывается: нужно отпустить S/Ы и нажать заново,
                     // иначе свежая фигура улетала бы вниз до того, как её заметишь
-  slamming = false; // сброс по X/Ч действует только на одну фигуру
 }
 
 function collides(p, dx, dy, cells = p.cells) {
@@ -185,12 +183,12 @@ function collides(p, dx, dy, cells = p.cells) {
 }
 
 function move(dx) {
-  if (!piece || gameOver || slamming) return;   // сброшенную фигуру уже не порулить
+  if (!piece || gameOver) return;
   if (!collides(piece, dx, 0)) piece.x += dx;
 }
 
 function rotate() {
-  if (!piece || gameOver || slamming) return;
+  if (!piece || gameOver) return;
   const rotated = rotateCW(piece.cells);
   // простой wall-kick: пробуем на месте, затем сдвиги влево/вправо
   for (const dx of [0, -1, 1, -2, 2]) {
@@ -200,6 +198,15 @@ function rotate() {
       return;
     }
   }
+}
+
+// X/Ч: фигура мгновенно уходит на самое нижнее свободное место и там же
+// фиксируется — без промежуточных шагов и без анимации.
+function hardDrop() {
+  if (!piece || gameOver || anim) return;
+  while (!collides(piece, 0, 1)) piece.y++;
+  dropAcc = 0;
+  lock();
 }
 
 function lock() {
@@ -344,7 +351,6 @@ function drawCell(x, y, color, offset = 0, active = false, scale = 1) {
 // Текущая пауза между шагами вниз. Уровень считается прямо из счёта,
 // поэтому очистка сразу нескольких строк учитывается за один раз.
 function dropInterval() {
-  if (slamming) return SLAM_MS;   // сброс идёт своим темпом, разгон по счёту не влияет
   const level = Math.floor(score / SPEED_STEP);
   return Math.max(MIN_DROP_MS, DROP_MS / Math.pow(SPEED_MULT, level));
 }
@@ -364,7 +370,7 @@ function loop(ts) {
   }
 
   const interval = dropInterval();
-  dropAcc += dt * (softDrop && !slamming ? FAST_FACTOR : 1);
+  dropAcc += dt * (softDrop ? FAST_FACTOR : 1);
   while (dropAcc >= interval) {
     dropAcc -= interval;
     step();
@@ -400,7 +406,6 @@ function start() {
   score = 0;
   gameOver = false;
   softDrop = false;
-  slamming = false;
   anim = null;
   dropAcc = 0;
   lastTs = null;
@@ -436,15 +441,10 @@ document.addEventListener('keydown', e => {
   // снова включил бы ускорение сразу после сброса в spawn().
   else if (action === 'down' && !e.repeat) softDrop = true;
   // Сброс срабатывает строго на нажатие: пока клавишу не отпустили,
-  // повторных срабатываний нет — иначе зажатый X ронял бы каждую
-  // следующую фигуру, ведь spawn() снимает slamming.
+  // повторных срабатываний нет — иначе зажатый X ронял бы фигуру за фигурой.
   else if (action === 'slam' && !slamHeld) {
     slamHeld = true;
-    slamming = true;
-    // Обнуляем накопитель: в нём лежит время, накопленное под медленный
-    // интервал. Без сброса оно тут же тратится пачкой шагов по 60 мс,
-    // и фигура прыгает вниз на разное расстояние — смотря когда нажали.
-    dropAcc = 0;
+    hardDrop();
   }
 });
 
