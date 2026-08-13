@@ -106,6 +106,7 @@ const SPEED_STEP = 30;     // каждые 30 очков...
 const SPEED_MULT = 1.25;   // ...скорость падения умножается на 1.25
 const MIN_DROP_MS = 250;   // предел разгона: не быстрее 250 мс на клетку
 const LOCK_DIM = 0.55;     // насколько гаснет блок, когда фигура застыла
+const SLAM_MS = 60;        // сброс вниз по X/Ч: 60 мс на клетку
 
 // Фигуры: матрица 1/0 + цвет.
 const SHAPES = [
@@ -130,7 +131,7 @@ const finalScoreEl = document.getElementById('finalScore');
 const overlayEl = document.getElementById('overlay');
 const stageEl = document.getElementById('stage');
 
-let grid, piece, score, gameOver, softDrop, dropAcc, lastTs, rafId;
+let grid, piece, score, gameOver, softDrop, slamming, dropAcc, lastTs, rafId;
 
 function emptyGrid() {
   return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
@@ -160,6 +161,7 @@ function spawn() {
   dropAcc = 0;      // новая фигура начинает клетку с нуля, без визуального рывка
   softDrop = false; // ускорение сбрасывается: нужно отпустить S/Ы и нажать заново,
                     // иначе свежая фигура улетала бы вниз до того, как её заметишь
+  slamming = false; // сброс по X/Ч действует только на одну фигуру
 }
 
 function collides(p, dx, dy, cells = p.cells) {
@@ -176,12 +178,12 @@ function collides(p, dx, dy, cells = p.cells) {
 }
 
 function move(dx) {
-  if (!piece || gameOver) return;
+  if (!piece || gameOver || slamming) return;   // сброшенную фигуру уже не порулить
   if (!collides(piece, dx, 0)) piece.x += dx;
 }
 
 function rotate() {
-  if (!piece || gameOver) return;
+  if (!piece || gameOver || slamming) return;
   const rotated = rotateCW(piece.cells);
   // простой wall-kick: пробуем на месте, затем сдвиги влево/вправо
   for (const dx of [0, -1, 1, -2, 2]) {
@@ -300,6 +302,7 @@ function drawCell(x, y, color, offset = 0, active = false) {
 // Текущая пауза между шагами вниз. Уровень считается прямо из счёта,
 // поэтому очистка сразу нескольких строк учитывается за один раз.
 function dropInterval() {
+  if (slamming) return SLAM_MS;   // сброс идёт своим темпом, разгон по счёту не влияет
   const level = Math.floor(score / SPEED_STEP);
   return Math.max(MIN_DROP_MS, DROP_MS / Math.pow(SPEED_MULT, level));
 }
@@ -312,7 +315,7 @@ function loop(ts) {
   lastTs = ts;
 
   const interval = dropInterval();
-  dropAcc += dt * (softDrop ? FAST_FACTOR : 1);
+  dropAcc += dt * (softDrop && !slamming ? FAST_FACTOR : 1);
   while (dropAcc >= interval) {
     dropAcc -= interval;
     step();
@@ -335,6 +338,7 @@ function start() {
   score = 0;
   gameOver = false;
   softDrop = false;
+  slamming = false;
   dropAcc = 0;
   lastTs = null;
   scoreEl.textContent = '0';
@@ -347,10 +351,10 @@ function start() {
 
 // Управление не зависит от раскладки: сначала смотрим на физическую
 // клавишу (e.code), затем на символ — латинский или кириллический.
-const ACTION_BY_CODE = { KeyA: 'left', KeyD: 'right', KeyS: 'down', KeyW: 'rotate' };
+const ACTION_BY_CODE = { KeyA: 'left', KeyD: 'right', KeyS: 'down', KeyW: 'rotate', KeyX: 'slam' };
 const ACTION_BY_CHAR = {
-  a: 'left',   d: 'right',  s: 'down',   w: 'rotate',
-  'ф': 'left', 'в': 'right', 'ы': 'down', 'ц': 'rotate',
+  a: 'left',   d: 'right',  s: 'down',   w: 'rotate',  x: 'slam',
+  'ф': 'left', 'в': 'right', 'ы': 'down', 'ц': 'rotate', 'ч': 'slam',
 };
 
 function actionOf(e) {
@@ -368,6 +372,7 @@ document.addEventListener('keydown', e => {
   // e.repeat — автоповтор от зажатой клавиши. Его игнорируем, иначе он сам
   // снова включил бы ускорение сразу после сброса в spawn().
   else if (action === 'down' && !e.repeat) softDrop = true;
+  else if (action === 'slam') slamming = true;
 });
 
 document.addEventListener('keyup', e => {
