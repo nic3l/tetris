@@ -434,7 +434,13 @@ document.addEventListener('keydown', e => {
   // e.repeat — автоповтор от зажатой клавиши. Его игнорируем, иначе он сам
   // снова включил бы ускорение сразу после сброса в spawn().
   else if (action === 'down' && !e.repeat) softDrop = true;
-  else if (action === 'slam') slamming = true;
+  else if (action === 'slam' && !slamming) {
+    slamming = true;
+    // Обнуляем накопитель: в нём лежит время, накопленное под медленный
+    // интервал. Без сброса оно тут же тратится пачкой шагов по 60 мс,
+    // и фигура прыгает вниз на разное расстояние — смотря когда нажали.
+    dropAcc = 0;
+  }
 });
 
 document.addEventListener('keyup', e => {
