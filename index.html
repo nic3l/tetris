@@ -47,6 +47,8 @@
     opacity: .55;
   }
   #score { font-size: 40px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .best-label { margin-top: 16px; }
+  #best { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; opacity: .7; }
   #help { margin-top: 24px; font-size: 13px; line-height: 1.7; opacity: .5; }
   #help b { color: var(--text); font-weight: 600; }
 
@@ -63,6 +65,8 @@
   #overlay.show { display: flex; }
   #overlay h1 { margin: 0; font-size: 28px; font-weight: 600; opacity: .8; }
   #finalScore { font-size: 72px; font-weight: 700; line-height: 1; }
+  #finalBest { font-size: 18px; opacity: .65; }
+  #finalBest.record { opacity: 1; color: #f2c14e; font-weight: 600; }
   #restart {
     margin-top: 8px;
     padding: 12px 28px;
@@ -84,6 +88,8 @@
   <div id="panel">
     <div class="label">Счёт</div>
     <div id="score">0</div>
+    <div class="label best-label">Рекорд</div>
+    <div id="best">0</div>
     <div id="help">
       <b>A</b> <b>←</b> — влево<br>
       <b>D</b> <b>→</b> — вправо<br>
@@ -97,6 +103,7 @@
 <div id="overlay">
   <h1>Игра окончена</h1>
   <div id="finalScore">0</div>
+  <div id="finalBest">Рекорд 0</div>
   <button id="restart">Начать заново</button>
 </div>
 
@@ -133,11 +140,24 @@ canvas.width = COLS * CELL;
 canvas.height = ROWS * CELL;
 
 const scoreEl = document.getElementById('score');
+const bestEl = document.getElementById('best');
 const finalScoreEl = document.getElementById('finalScore');
+const finalBestEl = document.getElementById('finalBest');
 const overlayEl = document.getElementById('overlay');
 const stageEl = document.getElementById('stage');
 
 let grid, piece, score, gameOver, softDrop, dropAcc, lastTs, rafId;
+
+// Рекорд переживает перезагрузку страницы. localStorage может быть недоступен
+// (приватный режим, ограничения песочницы) — тогда рекорд живёт до закрытия вкладки.
+const BEST_KEY = 'tetris-best';
+let best = 0;
+try { best = parseInt(localStorage.getItem(BEST_KEY), 10) || 0; } catch (e) {}
+
+function saveBest() {
+  try { localStorage.setItem(BEST_KEY, String(best)); } catch (e) {}
+}
+
 const slamKeys = new Set();   // зажатые клавиши телепорта: до отпускания не повторяем
 // Анимация очистки строк: null либо {phase:'shrink'|'fall', t, rows|shifts}.
 // Пока она идёт, игра стоит: фигура не падает и новая не появляется.
@@ -280,6 +300,8 @@ function applyClear(rows) {
   grid = kept;
   score += 10 * rows.length;
   scoreEl.textContent = score;
+  // Рекорд обновляется прямо по ходу игры, как только счёт его перегнал.
+  if (score > best) { best = score; bestEl.textContent = best; saveBest(); }
   return shifts;
 }
 
@@ -445,6 +467,11 @@ function endGame() {
   piece = null;
   draw();
   finalScoreEl.textContent = score;
+  // Рекорд к этому моменту уже обновлён, поэтому равенство означает,
+  // что он поставлен именно в этой партии.
+  const isRecord = score > 0 && score === best;
+  finalBestEl.textContent = isRecord ? `Новый рекорд: ${best}` : `Рекорд ${best}`;
+  finalBestEl.classList.toggle('record', isRecord);
   overlayEl.classList.add('show');
   stageEl.classList.add('over');
 }
@@ -458,6 +485,7 @@ function start() {
   dropAcc = 0;
   lastTs = null;
   scoreEl.textContent = '0';
+  bestEl.textContent = best;
   overlayEl.classList.remove('show');
   stageEl.classList.remove('over');
   spawn();
