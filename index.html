@@ -52,7 +52,7 @@
   #help { margin-top: 24px; font-size: 13px; line-height: 1.7; opacity: .5; }
   #help b { color: var(--text); font-weight: 600; }
 
-  #overlay {
+  #overlay, #pauseOverlay {
     position: fixed;
     inset: 0;
     display: none;
@@ -62,8 +62,10 @@
     gap: 18px;
     text-align: center;
   }
-  #overlay.show { display: flex; }
-  #overlay h1 { margin: 0; font-size: 28px; font-weight: 600; opacity: .8; }
+  #overlay.show, #pauseOverlay.show { display: flex; }
+  #overlay h1, #pauseOverlay h1 { margin: 0; font-size: 28px; font-weight: 600; opacity: .8; }
+  #pauseOverlay h1 { font-size: 40px; letter-spacing: .04em; }
+  #pauseOverlay .hint { font-size: 14px; opacity: .5; }
   #finalScore { font-size: 72px; font-weight: 700; line-height: 1; }
   #finalBest { font-size: 18px; opacity: .65; }
   #finalBest.record { opacity: 1; color: #f2c14e; font-weight: 600; }
@@ -98,6 +100,11 @@
       <b>X</b> <b>↓</b> — переместить вниз
     </div>
   </div>
+</div>
+
+<div id="pauseOverlay">
+  <h1>Пауза</h1>
+  <div class="hint">Esc — продолжить</div>
 </div>
 
 <div id="overlay">
@@ -144,9 +151,10 @@ const bestEl = document.getElementById('best');
 const finalScoreEl = document.getElementById('finalScore');
 const finalBestEl = document.getElementById('finalBest');
 const overlayEl = document.getElementById('overlay');
+const pauseEl = document.getElementById('pauseOverlay');
 const stageEl = document.getElementById('stage');
 
-let grid, piece, score, gameOver, softDrop, dropAcc, lastTs, rafId;
+let grid, piece, score, gameOver, paused, softDrop, dropAcc, lastTs, rafId;
 
 // Рекорд переживает перезагрузку страницы. localStorage может быть недоступен
 // (приватный режим, ограничения песочницы) — тогда рекорд живёт до закрытия вкладки.
@@ -421,6 +429,9 @@ function dropInterval() {
 function loop(ts) {
   rafId = requestAnimationFrame(loop);
   if (gameOver) return;
+  // На паузе двигаем только отметку времени, иначе после снятия паузы
+  // накопленный простой разом провалил бы фигуру вниз.
+  if (paused) { lastTs = ts; return; }
   if (lastTs == null) lastTs = ts;
   const dt = ts - lastTs;
   lastTs = ts;
@@ -462,6 +473,14 @@ function stepAnim() {
   spawn();
 }
 
+function togglePause() {
+  if (gameOver) return;
+  paused = !paused;
+  pauseEl.classList.toggle('show', paused);
+  stageEl.classList.toggle('over', paused);   // тот же размывающий класс
+  if (paused) softDrop = false;               // клавишу отпустят «вслепую»
+}
+
 function endGame() {
   gameOver = true;
   piece = null;
@@ -480,6 +499,8 @@ function start() {
   grid = emptyGrid();
   score = 0;
   gameOver = false;
+  paused = false;
+  pauseEl.classList.remove('show');
   softDrop = false;
   anim = null;
   dropAcc = 0;
@@ -516,10 +537,15 @@ function keyId(e) {
 }
 
 document.addEventListener('keydown', e => {
+  if (e.code === 'Escape' || e.key === 'Escape') {
+    e.preventDefault();
+    togglePause();
+    return;
+  }
   const action = actionOf(e);
   if (!action) return;
   e.preventDefault();
-  if (gameOver) return;
+  if (gameOver || paused) return;   // на паузе фигура не слушается
   if (action === 'left') move(-1);
   else if (action === 'right') move(1);
   else if (action === 'rotate') rotate();
