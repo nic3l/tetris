@@ -107,6 +107,7 @@ const SPEED_STEP = 30;     // каждые 30 очков...
 const SPEED_MULT = 1.25;   // ...скорость падения умножается на 1.25
 const MIN_DROP_MS = 250;   // предел разгона: не быстрее 250 мс на клетку
 const LOCK_DIM = 0.55;     // насколько гаснет блок, когда фигура застыла
+const TELEPORT_MS = 130;   // перелёт фигуры вниз по X/Ч и стрелке вниз
 const SHRINK_MS = 170;     // собранная строка сжимается
 const FALL_MS = 130;       // ...и всё, что над ней, съезжает вниз
 
@@ -219,13 +220,16 @@ function rotate() {
   }
 }
 
-// X/Ч: фигура мгновенно уходит на самое нижнее свободное место и там же
-// фиксируется — без промежуточных шагов и без анимации.
+// X/Ч и стрелка вниз: фигура исчезает на месте и появляется внизу.
+// Промежуточных положений нет — только короткий перелёт «растаяла → проявилась».
 function hardDrop() {
   if (!piece || gameOver || anim) return;
+  const fromY = piece.y;
   while (!collides(piece, 0, 1)) piece.y++;
   dropAcc = 0;
-  lock();
+  if (piece.y === fromY) { lock(); return; }   // уже на дне, показывать нечего
+  anim = { phase: 'teleport', t: 0, piece, fromY, toY: piece.y };
+  piece = null;   // на время перелёта фигурой не управляют
 }
 
 function lock() {
@@ -328,10 +332,25 @@ function draw() {
       ? 0
       : Math.min(1, dropAcc / dropInterval()) * CELL;
 
-    for (let y = 0; y < piece.cells.length; y++)
-      for (let x = 0; x < piece.cells[y].length; x++)
-        if (piece.cells[y][x]) drawCell(piece.x + x, piece.y + y, piece.color, offset, true);
+    drawPiece(piece, piece.y, offset, 1, 1);
   }
+
+  // Перелёт вниз: наверху фигура тает и ужимается, внизу проявляется и растёт.
+  if (anim && anim.phase === 'teleport') {
+    const q = Math.min(1, anim.t / TELEPORT_MS);
+    drawPiece(anim.piece, anim.fromY, 0, 1 - q, 1 - q * 0.4);
+    drawPiece(anim.piece, anim.toY,   0, q,     0.6 + q * 0.4);
+  }
+}
+
+// Рисует фигуру целиком: y задаётся отдельно от piece.y, чтобы одну и ту же
+// фигуру можно было показать сразу в двух местах во время перелёта.
+function drawPiece(pc, atY, offset, alpha, scale) {
+  ctx.globalAlpha = alpha;
+  for (let y = 0; y < pc.cells.length; y++)
+    for (let x = 0; x < pc.cells[y].length; x++)
+      if (pc.cells[y][x]) drawCell(pc.x + x, atY + y, pc.color, offset, true, scale);
+  ctx.globalAlpha = 1;
 }
 
 // Затемняем цвет застывшего блока. Кэш — цветов всего восемь,
@@ -398,8 +417,15 @@ function loop(ts) {
   draw();
 }
 
-// Сжатие → съезд → продолжаем игру.
+// Перелёт вниз, затем сжатие → съезд → продолжаем игру.
 function stepAnim() {
+  if (anim.phase === 'teleport') {
+    if (anim.t < TELEPORT_MS) return;
+    piece = anim.piece;   // фигура уже на месте назначения
+    anim = null;
+    lock();
+    return;
+  }
   if (anim.phase === 'shrink') {
     if (anim.t < SHRINK_MS) return;
     anim = { phase: 'fall', t: 0, shifts: applyClear(anim.rows) };
