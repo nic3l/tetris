@@ -107,6 +107,8 @@ const SPEED_MULT = 1.25;   // ...скорость падения умножае�
 const MIN_DROP_MS = 250;   // предел разгона: не быстрее 250 мс на клетку
 const LOCK_DIM = 0.55;     // насколько гаснет блок, когда фигура застыла
 const SLAM_MS = 60;        // сброс вниз по X/Ч: 60 мс на клетку
+const SHRINK_MS = 170;     // собранная строка сжимается
+const FALL_MS = 130;       // ...и всё, что над ней, съезжает вниз
 
 // Фигуры: матрица 1/0 + цвет.
 const SHAPES = [
@@ -132,6 +134,9 @@ const overlayEl = document.getElementById('overlay');
 const stageEl = document.getElementById('stage');
 
 let grid, piece, score, gameOver, softDrop, slamming, dropAcc, lastTs, rafId;
+// Анимация очистки строк: null либо {phase:'shrink'|'fall', t, rows|shifts}.
+// Пока она идёт, игра стоит: фигура не падает и новая не появляется.
+let anim = null;
 
 function emptyGrid() {
   return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
@@ -204,21 +209,43 @@ function lock() {
     }
   }
   piece = null;
-  clearLines();
+
+  const rows = fullRows();
+  if (rows.length) {
+    // Есть что убирать — запускаем анимацию. Следующая фигура появится
+    // после неё, из finishAnim().
+    anim = { phase: 'shrink', t: 0, rows };
+    return;
+  }
   if (checkTopOut()) { endGame(); return; }
   spawn();
 }
 
-function clearLines() {
-  for (let y = ROWS - 1; y >= 0; y--) {
-    if (grid[y].every(c => c)) {
-      grid.splice(y, 1);
-      grid.unshift(Array(COLS).fill(null));
-      score += 10;
-      scoreEl.textContent = score;
-      y++; // проверить ту же строку ещё раз
-    }
+function fullRows() {
+  const rows = [];
+  for (let y = 0; y < ROWS; y++) if (grid[y].every(c => c)) rows.push(y);
+  return rows;
+}
+
+// Убирает строки и запоминает, на сколько клеток съехала каждая
+// уцелевшая строка — это нужно, чтобы нарисовать съезд.
+function applyClear(rows) {
+  const cleared = new Set(rows);
+  const kept = [];
+  const shifts = [];
+  for (let y = 0; y < ROWS; y++) {
+    if (cleared.has(y)) continue;
+    // строка падает на столько клеток, сколько убрано под ней
+    let shift = 0;
+    for (const c of rows) if (c > y) shift++;
+    kept.push(grid[y]);
+    shifts.push(shift);
   }
+  while (kept.length < ROWS) { kept.unshift(Array(COLS).fill(null)); shifts.unshift(0); }
+  grid = kept;
+  score += 10 * rows.length;
+  scoreEl.textContent = score;
+  return shifts;
 }
 
 // Конец игры: какая-то колонка заполнена на всю высоту поля (ROWS).
@@ -251,9 +278,19 @@ function draw() {
   }
 
   // Застывшие блоки — приглушённые, активная фигура — яркая.
-  for (let y = 0; y < ROWS; y++)
+  // Во время очистки: собранные строки сжимаются, потом уцелевшие съезжают вниз.
+  const shrinking = anim && anim.phase === 'shrink';
+  const falling = anim && anim.phase === 'fall';
+  const p = anim ? Math.min(1, anim.t / (shrinking ? SHRINK_MS : FALL_MS)) : 0;
+
+  for (let y = 0; y < ROWS; y++) {
+    const scale = shrinking && anim.rows.includes(y) ? 1 - p : 1;
+    // строка едет снизу вверх к своему новому месту: стартует выше на shift клеток
+    const offset = falling ? -anim.shifts[y] * CELL * (1 - p) : 0;
+    if (scale <= 0) continue;
     for (let x = 0; x < COLS; x++)
-      if (grid[y][x]) drawCell(x, y, dim(grid[y][x]), 0, false);
+      if (grid[y][x]) drawCell(x, y, dim(grid[y][x]), offset, false, scale);
+  }
 
   if (piece) {
     // Плавность: между шагами сдвигаем фигуру вниз на долю клетки,
@@ -283,19 +320,22 @@ function dim(hex) {
   return dimCache[hex];
 }
 
-function drawCell(x, y, color, offset = 0, active = false) {
+function drawCell(x, y, color, offset = 0, active = false, scale = 1) {
   if (y < 0) return;
-  const px = x * CELL, py = y * CELL + offset;
+  // при scale < 1 блок ужимается к центру своей клетки
+  const size = (CELL - 4) * scale;
+  const inset = (CELL - size) / 2;
+  const px = x * CELL + inset, py = y * CELL + offset + inset;
   ctx.fillStyle = color;
-  ctx.fillRect(px + 2, py + 2, CELL - 4, CELL - 4);
+  ctx.fillRect(px, py, size, size);
   // блик сверху: у активной фигуры заметный, у застывшей — еле-еле
   ctx.fillStyle = active ? 'rgba(255,255,255,.28)' : 'rgba(255,255,255,.07)';
-  ctx.fillRect(px + 2, py + 2, CELL - 4, 6);
+  ctx.fillRect(px, py, size, 6 * scale);
   // светлая рамка только у активной — она читается как «эта под управлением»
   if (active) {
     ctx.strokeStyle = 'rgba(255,255,255,.55)';
     ctx.lineWidth = 2;
-    ctx.strokeRect(px + 3, py + 3, CELL - 6, CELL - 6);
+    ctx.strokeRect(px + 1, py + 1, size - 2, size - 2);
   }
 }
 
@@ -314,6 +354,13 @@ function loop(ts) {
   const dt = ts - lastTs;
   lastTs = ts;
 
+  if (anim) {
+    anim.t += dt;
+    stepAnim();
+    draw();
+    return;   // пока строки убираются, фигуры не двигаются
+  }
+
   const interval = dropInterval();
   dropAcc += dt * (softDrop && !slamming ? FAST_FACTOR : 1);
   while (dropAcc >= interval) {
@@ -322,6 +369,19 @@ function loop(ts) {
     if (gameOver) break;
   }
   draw();
+}
+
+// Сжатие → съезд → продолжаем игру.
+function stepAnim() {
+  if (anim.phase === 'shrink') {
+    if (anim.t < SHRINK_MS) return;
+    anim = { phase: 'fall', t: 0, shifts: applyClear(anim.rows) };
+    return;
+  }
+  if (anim.t < FALL_MS) return;
+  anim = null;
+  if (checkTopOut()) { endGame(); return; }
+  spawn();
 }
 
 function endGame() {
@@ -339,6 +399,7 @@ function start() {
   gameOver = false;
   softDrop = false;
   slamming = false;
+  anim = null;
   dropAcc = 0;
   lastTs = null;
   scoreEl.textContent = '0';
