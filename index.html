@@ -38,6 +38,9 @@
     border: 2px solid var(--line);
     border-radius: 8px;
     display: block;
+    max-width: 100%;
+    height: auto;
+    touch-action: none;   /* жесты уходят игре, а не прокрутке страницы */
   }
   #panel { min-width: 120px; padding-top: 4px; }
   #panel .label {
@@ -108,6 +111,31 @@
     cursor: pointer;
   }
   #restart:hover, #begin:hover { opacity: .85; }
+
+  /* Подсказка про касания видна только на устройствах без мыши. */
+  .touch-only { display: none; }
+
+  @media (max-width: 620px), (pointer: coarse) {
+    body { align-items: flex-start; padding: 10px; }
+    #stage { flex-direction: column; align-items: center; gap: 10px; width: 100%; }
+    #panel {
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 10px 20px;
+      flex-wrap: wrap;
+      min-width: 0;
+      padding-top: 0;
+    }
+    .best-label { margin-top: 0; }
+    #score { font-size: 28px; }
+    #best { font-size: 20px; }
+    #help { display: none; }        /* на телефоне управление жестами */
+    .keys { display: none; }
+    .keys.touch-only { display: grid; }   /* ...а список жестов, наоборот, показываем */
+    #startOverlay .card { padding: 24px 22px 26px; }
+    #startOverlay h1 { font-size: 26px; }
+  }
 </style>
 </head>
 <body>
@@ -142,6 +170,11 @@
       <dt>S</dt><dd>ускорить падение</dd>
       <dt>X &nbsp;↓</dt><dd>сбросить вниз</dd>
       <dt>Esc</dt><dd>пауза</dd>
+    </dl>
+    <dl class="keys touch-only">
+      <dt>свайп ← →</dt><dd>двигать фигуру</dd>
+      <dt>свайп ↓</dt><dd>сбросить вниз</dd>
+      <dt>два касания</dt><dd>повернуть</dd>
     </dl>
     <button id="begin">НАЧАТЬ ИГРУ</button>
   </div>
@@ -662,6 +695,74 @@ document.addEventListener('keyup', e => {
   if (action === 'down') softDrop = false;
   else if (action === 'slam') slamKeys.delete(keyId(e));   // клавишу можно нажать снова
 });
+
+// --- Касания: свайпы вместо стрелок, двойное касание вместо поворота ---
+const TAP_MS = 250;         // дольше — это уже не касание, а придержали
+const TAP_PX = 16;          // сдвинулся сильнее — значит вёл, а не касался
+const DOUBLE_TAP_MS = 300;  // окно между двумя касаниями
+const SWIPE_DOWN_PX = 50;   // с какого сдвига вниз считаем сбросом
+
+let touch = null;
+let lastTapAt = 0;
+
+// Ширина клетки на экране: холст масштабируется под узкие экраны,
+// поэтому в пикселях страницы клетка не равна CELL.
+function cellOnScreen() {
+  return canvas.clientWidth / COLS;
+}
+
+function touchBusy() {
+  return atStartScreen || paused || gameOver;
+}
+
+canvas.addEventListener('touchstart', e => {
+  if (e.touches.length !== 1) return;
+  e.preventDefault();
+  const t = e.touches[0];
+  touch = { x0: t.clientX, y0: t.clientY, lastX: t.clientX, t0: Date.now(), moved: false };
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  if (!touch || e.touches.length !== 1) return;
+  e.preventDefault();
+  const t = e.touches[0];
+  if (Math.abs(t.clientX - touch.x0) > TAP_PX || Math.abs(t.clientY - touch.y0) > TAP_PX)
+    touch.moved = true;
+  if (touchBusy()) return;
+  // Фигура едет за пальцем: каждая пройденная клетка — один сдвиг.
+  const step = cellOnScreen();
+  let dx = t.clientX - touch.lastX;
+  while (Math.abs(dx) >= step) {
+    const dir = Math.sign(dx);
+    move(dir);
+    touch.lastX += dir * step;
+    dx -= dir * step;
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  if (!touch) return;
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  const dx = t.clientX - touch.x0;
+  const dy = t.clientY - touch.y0;
+  const held = Date.now() - touch.t0;
+  const moved = touch.moved;
+  touch = null;
+  if (touchBusy()) return;
+
+  // Свайп вниз — сбросить фигуру.
+  if (dy > SWIPE_DOWN_PX && Math.abs(dy) > Math.abs(dx)) { hardDrop(); return; }
+
+  // Короткое касание без ведения: второе подряд поворачивает фигуру.
+  if (!moved && held < TAP_MS) {
+    const now = Date.now();
+    if (now - lastTapAt < DOUBLE_TAP_MS) { rotate(); lastTapAt = 0; }
+    else lastTapAt = now;
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchcancel', () => { touch = null; });
 
 document.getElementById('restart').addEventListener('click', start);
 document.getElementById('begin').addEventListener('click', beginGame);
