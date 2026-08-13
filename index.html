@@ -157,7 +157,9 @@ function spawn() {
   };
   if (collides(p, 0, 0)) { endGame(); return; }
   piece = p;
-  dropAcc = 0;   // новая фигура начинает клетку с нуля, без визуального рывка
+  dropAcc = 0;      // новая фигура начинает клетку с нуля, без визуального рывка
+  softDrop = false; // ускорение сбрасывается: нужно отпустить S/Ы и нажать заново,
+                    // иначе свежая фигура улетала бы вниз до того, как её заметишь
 }
 
 function collides(p, dx, dy, cells = p.cells) {
@@ -363,7 +365,9 @@ document.addEventListener('keydown', e => {
   if (action === 'left') move(-1);
   else if (action === 'right') move(1);
   else if (action === 'rotate') rotate();
-  else if (action === 'down') softDrop = true;
+  // e.repeat — автоповтор от зажатой клавиши. Его игнорируем, иначе он сам
+  // снова включил бы ускорение сразу после сброса в spawn().
+  else if (action === 'down' && !e.repeat) softDrop = true;
 });
 
 document.addEventListener('keyup', e => {
