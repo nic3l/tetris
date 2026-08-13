@@ -124,6 +124,8 @@ const SPEED_STEP = 30;     // каждые 30 очков...
 const SPEED_MULT = 1.25;   // ...скорость падения умножается на 1.25
 const MIN_DROP_MS = 250;   // предел разгона: не быстрее 250 мс на клетку
 const LOCK_DIM = 0.55;     // насколько гаснет блок, когда фигура застыла
+const GRACE_HEIGHT = 11;   // когда стакан дорос до 11 клеток...
+const GRACE_MS = 333;      // ...новая фигура треть секунды висит неподвижно
 const TELEPORT_MS = 130;   // перелёт фигуры вниз по X/Ч и стрелке вниз
 const SHRINK_MS = 170;     // собранная строка сжимается
 const FALL_MS = 130;       // ...и всё, что над ней, съезжает вниз
@@ -155,6 +157,7 @@ const pauseEl = document.getElementById('pauseOverlay');
 const stageEl = document.getElementById('stage');
 
 let grid, piece, score, gameOver, paused, softDrop, dropAcc, lastTs, rafId;
+let grace = 0;   // сколько мс новая фигура ещё стоит неподвижно (высокий стакан)
 
 // Рекорд переживает перезагрузку страницы. localStorage может быть недоступен
 // (приватный режим, ограничения песочницы) — тогда рекорд живёт до закрытия вкладки.
@@ -198,6 +201,8 @@ function spawn() {
   if (collides(p, 0, 0)) { endGame(); return; }
   piece = p;
   dropAcc = 0;      // новая фигура начинает клетку с нуля, без визуального рывка
+  // Стакан высокий — даём время осмотреться: фигура висит, но слушается.
+  grace = stackHeight() >= GRACE_HEIGHT ? GRACE_MS : 0;
   softDrop = false; // ускорение сбрасывается: нужно отпустить S/Ы и нажать заново,
                     // иначе свежая фигура улетала бы вниз до того, как её заметишь
 }
@@ -255,6 +260,7 @@ function rotate() {
 // Промежуточных положений нет — только короткий перелёт «растаяла → проявилась».
 function hardDrop() {
   if (!piece || gameOver || anim) return;
+  grace = 0;   // сбросили сами — льготное время больше не нужно
   const fromY = piece.y;
   while (!collides(piece, 0, 1)) piece.y++;
   dropAcc = 0;
@@ -311,6 +317,13 @@ function applyClear(rows) {
   // Рекорд обновляется прямо по ходу игры, как только счёт его перегнал.
   if (score > best) { best = score; bestEl.textContent = best; saveBest(); }
   return shifts;
+}
+
+// Высота завала: сколько клеток от дна до самого верхнего занятого ряда.
+function stackHeight() {
+  for (let y = 0; y < ROWS; y++)
+    if (grid[y].some(c => c)) return ROWS - y;
+  return 0;
 }
 
 // Конец игры: какая-то колонка заполнена на всю высоту поля (ROWS).
@@ -443,6 +456,13 @@ function loop(ts) {
     return;   // пока строки убираются, фигуры не двигаются
   }
 
+  // Льготное время: фигура стоит, но управление работает.
+  if (grace > 0) {
+    grace -= dt;
+    draw();
+    return;
+  }
+
   const interval = dropInterval();
   dropAcc += dt * (softDrop ? FAST_FACTOR : 1);
   while (dropAcc >= interval) {
@@ -503,6 +523,7 @@ function start() {
   pauseEl.classList.remove('show');
   softDrop = false;
   anim = null;
+  grace = 0;
   dropAcc = 0;
   lastTs = null;
   scoreEl.textContent = '0';
