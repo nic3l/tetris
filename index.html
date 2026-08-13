@@ -82,11 +82,11 @@
     <div class="label">Счёт</div>
     <div id="score">0</div>
     <div id="help">
-      <b>A</b> — влево<br>
-      <b>D</b> — вправо<br>
+      <b>A</b> <b>←</b> — влево<br>
+      <b>D</b> <b>→</b> — вправо<br>
       <b>S</b> — ускорить<br>
-      <b>W</b> — поворот<br>
-      <b>X</b> — переместить вниз
+      <b>W</b> <b>↑</b> — поворот<br>
+      <b>X</b> <b>↓</b> — переместить вниз
     </div>
   </div>
 </div>
@@ -419,7 +419,11 @@ function start() {
 
 // Управление не зависит от раскладки: сначала смотрим на физическую
 // клавишу (e.code), затем на символ — латинский или кириллический.
-const ACTION_BY_CODE = { KeyA: 'left', KeyD: 'right', KeyS: 'down', KeyW: 'rotate', KeyX: 'slam' };
+const ACTION_BY_CODE = {
+  KeyA: 'left', KeyD: 'right', KeyS: 'down', KeyW: 'rotate', KeyX: 'slam',
+  // стрелки: вверх — поворот, вниз — телепорт до упора
+  ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'rotate', ArrowDown: 'slam',
+};
 const ACTION_BY_CHAR = {
   a: 'left',   d: 'right',  s: 'down',   w: 'rotate',  x: 'slam',
   'ф': 'left', 'в': 'right', 'ы': 'down', 'ц': 'rotate', 'ч': 'slam',
