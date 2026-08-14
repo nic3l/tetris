@@ -192,34 +192,16 @@
   <button id="restart">Начать заново</button>
 </div>
 
+<script src="game.js"></script>
 <script>
-const COLS = 10;
-const ROWS = 15;
-const CELL = 40;
-const DROP_MS = 1000;      // стартовая скорость: 1 клетка в секунду
-const FAST_FACTOR = 5;     // ускорение на S/Ы
-const SPEED_STEP = 30;     // каждые 30 очков...
-const SPEED_MULT = 1.25;   // ...скорость падения умножается на 1.25
-const MIN_DROP_MS = 250;   // предел разгона: не быстрее 250 мс на клетку
+// Правила игры — в game.js. Здесь только экран, ввод и анимации.
+// Размеры поля, скорости и фигуры берутся оттуда же.
+const CELL = 40;           // размер клетки на холсте, в пикселях
 const LOCK_DIM = 0.55;     // насколько гаснет блок, когда фигура застыла
-const GRACE_HEIGHT = 11;   // когда стакан дорос до 11 клеток...
-const GRACE_MS = 333;      // ...новая фигура треть секунды висит неподвижно
 const TELEPORT_MS = 130;   // перелёт фигуры вниз по X/Ч и стрелке вниз
 const SHRINK_MS = 170;     // собранная строка сжимается
 const FALL_MS = 130;       // ...и всё, что над ней, съезжает вниз
 
-// Фигуры: матрица 1/0 + цвет.
-const SHAPES = [
-  { name: 'dot',   color: '#f2c14e', cells: [[1]] },
-  { name: 'i3',    color: '#4ec9f2', cells: [[1],[1],[1]] },
-  { name: 'i4',    color: '#4e8cf2', cells: [[1],[1],[1],[1]] },
-  { name: 'i5',    color: '#7a6cf5', cells: [[1],[1],[1],[1],[1]] },
-  { name: 'o4',    color: '#f27a4e', cells: [[1,1],[1,1]] },
-  { name: 'o9',    color: '#ef5b7b', cells: [[1,1,1],[1,1,1],[1,1,1]] },
-  { name: 'rect',  color: '#5ad19a', cells: [[1,1],[1,1],[1,1]] },
-  // Г-образная: высота 4, сверху один блок влево
-  { name: 'jTall', color: '#c46ef0', cells: [[1,1],[0,1],[0,1],[0,1]] },
-];
 
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
@@ -254,86 +236,26 @@ const slamKeys = new Set();   // зажатые клавиши телепорт�
 // Пока она идёт, игра стоит: фигура не падает и новая не появляется.
 let anim = null;
 
-function emptyGrid() {
-  return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
-}
-
-function rotateCW(cells) {
-  const h = cells.length, w = cells[0].length;
-  const out = Array.from({ length: w }, () => Array(h).fill(0));
-  for (let y = 0; y < h; y++)
-    for (let x = 0; x < w; x++)
-      out[x][h - 1 - y] = cells[y][x];
-  return out;
-}
-
 function spawn() {
-  const shape = SHAPES[Math.floor(Math.random() * SHAPES.length)];
-  const cells = shape.cells.map(row => row.slice());
-  const w = cells[0].length;
-  const p = {
-    cells,
-    color: shape.color,
-    x: Math.floor((COLS - w) / 2),   // по центру сверху
-    y: 0,
-    rot: 0,                          // номер поворота, 0..3
-  };
-  if (collides(p, 0, 0)) { endGame(); return; }
+  const p = makePiece(randomShape());
+  if (collides(grid, p, 0, 0)) { endGame(); return; }
   piece = p;
   dropAcc = 0;      // новая фигура начинает клетку с нуля, без визуального рывка
   // Стакан высокий — даём время осмотреться: фигура висит, но слушается.
-  grace = stackHeight() >= GRACE_HEIGHT ? GRACE_MS : 0;
+  grace = graceFor(grid);
   softDrop = false; // ускорение сбрасывается: нужно отпустить S/Ы и нажать заново,
                     // иначе свежая фигура улетала бы вниз до того, как её заметишь
 }
 
-function collides(p, dx, dy, cells = p.cells) {
-  for (let y = 0; y < cells.length; y++) {
-    for (let x = 0; x < cells[y].length; x++) {
-      if (!cells[y][x]) continue;
-      const nx = p.x + x + dx;
-      const ny = p.y + y + dy;
-      if (nx < 0 || nx >= COLS || ny >= ROWS) return true;
-      if (ny >= 0 && grid[ny][nx]) return true;
-    }
-  }
-  return false;
-}
-
 function move(dx) {
   if (!piece || gameOver) return;
-  if (!collides(piece, dx, 0)) piece.x += dx;
+  if (!collides(grid, piece, dx, 0)) piece.x += dx;
 }
 
 function rotate() {
   if (!piece || gameOver) return;
-  const rotated = rotateCW(piece.cells);
-  const w = piece.cells[0].length, h = piece.cells.length;
-  // Поворот вокруг центра. Координата фигуры — её левый верхний угол,
-  // а рамка при повороте меняет ширину с высотой (w×h → h×w). Без поправки
-  // угол остаётся на месте и фигура будто крутится вокруг него; сдвигаем
-  // так, чтобы совпали центры старой и новой рамки.
-  // У фигур вроде 2×3 центр приходится на полклетки, и округление всегда
-  // в одну сторону уводило бы фигуру всё дальше при каждом повороте.
-  // Чередуем округление по чётности поворота — тогда пара поворотов
-  // возвращает фигуру ровно туда, где она была.
-  const round = piece.rot % 2 === 0 ? Math.floor : Math.ceil;
-  const cx = round((w - h) / 2);
-  const cy = round((h - w) / 2);
-  // wall-kick: если на новом месте не помещается — пробуем рядом
-  for (const dy of [0, 1, 2, -1, -2]) {
-    for (const dx of [0, -1, 1, -2, 2]) {
-      const probe = { x: piece.x + cx + dx, y: piece.y + cy + dy, cells: rotated };
-      if (probe.y < 0) continue;   // выше поля фигуру не поднимаем
-      if (!collides(probe, 0, 0, rotated)) {
-        piece.cells = rotated;
-        piece.x = probe.x;
-        piece.y = probe.y;
-        piece.rot = (piece.rot + 1) % 4;
-        return;
-      }
-    }
-  }
+  const next = rotatedPlacement(grid, piece);
+  if (next) Object.assign(piece, next);
 }
 
 // X/Ч и стрелка вниз: фигура исчезает на месте и появляется внизу.
@@ -342,7 +264,7 @@ function hardDrop() {
   if (!piece || gameOver || anim) return;
   grace = 0;   // сбросили сами — льготное время больше не нужно
   const fromY = piece.y;
-  while (!collides(piece, 0, 1)) piece.y++;
+  piece.y = dropTarget(grid, piece);
   dropAcc = 0;
   if (piece.y === fromY) { lock(); return; }   // уже на дне, показывать нечего
   anim = { phase: 'teleport', t: 0, piece, fromY, toY: piece.y };
@@ -350,75 +272,23 @@ function hardDrop() {
 }
 
 function lock() {
-  for (let y = 0; y < piece.cells.length; y++) {
-    for (let x = 0; x < piece.cells[y].length; x++) {
-      if (!piece.cells[y][x]) continue;
-      const gy = piece.y + y, gx = piece.x + x;
-      if (gy >= 0) grid[gy][gx] = piece.color;
-    }
-  }
+  lockPiece(grid, piece);
   piece = null;
 
-  const rows = fullRows();
+  const rows = fullRows(grid);
   if (rows.length) {
     // Есть что убирать — запускаем анимацию. Следующая фигура появится
-    // после неё, из finishAnim().
+    // после неё, из stepAnim().
     anim = { phase: 'shrink', t: 0, rows };
     return;
   }
-  if (checkTopOut()) { endGame(); return; }
+  if (hasFullColumn(grid)) { endGame(); return; }
   spawn();
-}
-
-function fullRows() {
-  const rows = [];
-  for (let y = 0; y < ROWS; y++) if (grid[y].every(c => c)) rows.push(y);
-  return rows;
-}
-
-// Убирает строки и запоминает, на сколько клеток съехала каждая
-// уцелевшая строка — это нужно, чтобы нарисовать съезд.
-function applyClear(rows) {
-  const cleared = new Set(rows);
-  const kept = [];
-  const shifts = [];
-  for (let y = 0; y < ROWS; y++) {
-    if (cleared.has(y)) continue;
-    // строка падает на столько клеток, сколько убрано под ней
-    let shift = 0;
-    for (const c of rows) if (c > y) shift++;
-    kept.push(grid[y]);
-    shifts.push(shift);
-  }
-  while (kept.length < ROWS) { kept.unshift(Array(COLS).fill(null)); shifts.unshift(0); }
-  grid = kept;
-  score += 10 * rows.length;
-  scoreEl.textContent = score;
-  // Рекорд обновляется прямо по ходу игры, как только счёт его перегнал.
-  if (score > best) { best = score; bestEl.textContent = best; saveBest(); }
-  return shifts;
-}
-
-// Высота завала: сколько клеток от дна до самого верхнего занятого ряда.
-function stackHeight() {
-  for (let y = 0; y < ROWS; y++)
-    if (grid[y].some(c => c)) return ROWS - y;
-  return 0;
-}
-
-// Конец игры: какая-то колонка заполнена на всю высоту поля (ROWS).
-function checkTopOut() {
-  for (let x = 0; x < COLS; x++) {
-    let full = true;
-    for (let y = 0; y < ROWS; y++) if (!grid[y][x]) { full = false; break; }
-    if (full) return true;
-  }
-  return false;
 }
 
 function step() {
   if (!piece) return;
-  if (!collides(piece, 0, 1)) piece.y += 1;
+  if (!collides(grid, piece, 0, 1)) piece.y += 1;
   else lock();
 }
 
@@ -454,9 +324,9 @@ function draw() {
     // Плавность: между шагами сдвигаем фигуру вниз на долю клетки,
     // пропорционально накопленному времени. У самой земли не сдвигаем,
     // иначе блок визуально влезал бы в стакан.
-    const offset = collides(piece, 0, 1)
+    const offset = collides(grid, piece, 0, 1)
       ? 0
-      : Math.min(1, dropAcc / dropInterval()) * CELL;
+      : Math.min(1, dropAcc / dropInterval(score)) * CELL;
 
     // Во время льготы рамка мигает — видно, что фигура ждёт, а не зависла.
     // Два полных цикла за льготу: начинаем с яркой вспышки.
@@ -518,13 +388,6 @@ function drawCell(x, y, color, offset = 0, active = false, scale = 1, glow = 0.5
   }
 }
 
-// Текущая пауза между шагами вниз. Уровень считается прямо из счёта,
-// поэтому очистка сразу нескольких строк учитывается за один раз.
-function dropInterval() {
-  const level = Math.floor(score / SPEED_STEP);
-  return Math.max(MIN_DROP_MS, DROP_MS / Math.pow(SPEED_MULT, level));
-}
-
 function loop(ts) {
   rafId = requestAnimationFrame(loop);
   if (gameOver) return;
@@ -549,7 +412,7 @@ function loop(ts) {
     return;
   }
 
-  const interval = dropInterval();
+  const interval = dropInterval(score);
   dropAcc += dt * (softDrop ? FAST_FACTOR : 1);
   while (dropAcc >= interval) {
     dropAcc -= interval;
@@ -570,12 +433,19 @@ function stepAnim() {
   }
   if (anim.phase === 'shrink') {
     if (anim.t < SHRINK_MS) return;
-    anim = { phase: 'fall', t: 0, shifts: applyClear(anim.rows) };
+    // Правила считают, экран показывает — здесь эти две части и встречаются.
+    const cleared = applyClear(grid, anim.rows);
+    grid = cleared.grid;
+    score += cleared.points;
+    scoreEl.textContent = score;
+    // Рекорд обновляется прямо по ходу игры, как только счёт его перегнал.
+    if (score > best) { best = score; bestEl.textContent = best; saveBest(); }
+    anim = { phase: 'fall', t: 0, shifts: cleared.shifts };
     return;
   }
   if (anim.t < FALL_MS) return;
   anim = null;
-  if (checkTopOut()) { endGame(); return; }
+  if (hasFullColumn(grid)) { endGame(); return; }
   spawn();
 }
 
