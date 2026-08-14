@@ -192,10 +192,14 @@
   <button id="restart">Начать заново</button>
 </div>
 
-<script src="game.js"></script>
-<script>
+<script type="module">
 // Правила игры — в game.js. Здесь только экран, ввод и анимации.
-// Размеры поля, скорости и фигуры берутся оттуда же.
+import {
+  COLS, ROWS, FAST_FACTOR, GRACE_MS,
+  emptyGrid, collides, randomShape, makePiece, rotatedPlacement, dropTarget,
+  lockPiece, fullRows, applyClear, hasFullColumn, dropInterval, graceFor,
+} from './game.js';
+
 const CELL = 40;           // размер клетки на холсте, в пикселях
 const LOCK_DIM = 0.55;     // насколько гаснет блок, когда фигура застыла
 const TELEPORT_MS = 130;   // перелёт фигуры вниз по X/Ч и стрелке вниз

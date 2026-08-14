@@ -1,9 +1,8 @@
 // Правила тетриса. Здесь нет ни document, ни canvas — только сетка, фигуры
 // и счёт. Всё, что видно на экране, живёт в index.html и вызывает эти функции.
 //
-// В браузере файл подключается как обычный скрипт, и его константы с функциями
-// видны следующему скрипту на странице. В Node он подключается через require —
-// поэтому правила можно проверять из терминала, без страницы и без заглушек.
+// Это ES-модуль: и страница, и тесты в терминале подключают его одним и тем же
+// словом import. Правила проверяются без браузера и без заглушек DOM.
 
 const COLS = 10;
 const ROWS = 15;
@@ -170,12 +169,10 @@ function graceFor(grid) {
   return stackHeight(grid) >= GRACE_HEIGHT ? GRACE_MS : 0;
 }
 
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = {
-    COLS, ROWS, DROP_MS, FAST_FACTOR, SPEED_STEP, SPEED_MULT, MIN_DROP_MS,
-    SCORE_PER_ROW, GRACE_HEIGHT, GRACE_MS, SHAPES,
-    emptyGrid, rotateCW, collides, randomShape, makePiece, rotatedPlacement,
-    dropTarget, lockPiece, fullRows, applyClear, stackHeight, hasFullColumn,
-    dropInterval, graceFor,
-  };
-}
+export {
+  COLS, ROWS, DROP_MS, FAST_FACTOR, SPEED_STEP, SPEED_MULT, MIN_DROP_MS,
+  SCORE_PER_ROW, GRACE_HEIGHT, GRACE_MS, SHAPES,
+  emptyGrid, rotateCW, collides, randomShape, makePiece, rotatedPlacement,
+  dropTarget, lockPiece, fullRows, applyClear, stackHeight, hasFullColumn,
+  dropInterval, graceFor,
+};
