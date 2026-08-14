@@ -61,3 +61,9 @@ test('в колонке есть пустая клетка — игра прод
   grid[7][3] = null;   // одна дырка посередине
   assert.equal(hasFullColumn(grid), false);
 });
+
+test('колонка не достаёт одну клетку до верха — игра продолжается', () => {
+  const grid = emptyGrid();
+  for (let y = 1; y < ROWS; y++) grid[y][3] = '#f2c14e';   // пусто только в ряду 0
+  assert.equal(hasFullColumn(grid), false);
+});
