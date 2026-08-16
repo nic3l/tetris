@@ -11,7 +11,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  dropInterval, hasFullColumn, rotatedPlacement, makePiece,
+  dropInterval, hasFullColumn, rotatedPlacement, makePiece, applyClear,
   emptyGrid, SHAPES, ROWS, COLS,
 } from './game.js';
 
@@ -110,4 +110,52 @@ test('зажатой в колодце палке повернуться нек�
   piece.y = 5;
 
   assert.equal(rotatedPlacement(grid, piece), null);
+});
+
+// Очистка строк. applyClear возвращает новую сетку, очки и shifts —
+// насколько клеток съехала вниз каждая уцелевшая строка. Индекс в shifts —
+// это уже новое место строки.
+
+test('убрали одну строку — то, что над ней, съезжает на клетку', () => {
+  const grid = emptyGrid();
+  for (let x = 0; x < COLS; x++) grid[ROWS - 1][x] = '#f2c14e';   // нижняя строка полная
+  grid[10][0] = '#4ec9f2';                                        // метка выше неё
+
+  const res = applyClear(grid, [ROWS - 1]);
+
+  assert.equal(res.points, 10);
+  assert.equal(res.grid[10][0], null);          // на старом месте пусто
+  assert.equal(res.grid[11][0], '#4ec9f2');     // метка оказалась строкой ниже
+  assert.equal(res.shifts[11], 1);              // съехала ровно на одну клетку
+});
+
+test('убрали две строки — то, что над ними, съезжает на две клетки', () => {
+  const grid = emptyGrid();
+  for (const y of [ROWS - 2, ROWS - 1])
+    for (let x = 0; x < COLS; x++) grid[y][x] = '#f2c14e';        // две нижние полные
+  grid[10][0] = '#4ec9f2';
+
+  const res = applyClear(grid, [ROWS - 2, ROWS - 1]);
+
+  assert.equal(res.points, 20);
+  assert.equal(res.grid[10][0], null);
+  assert.equal(res.grid[12][0], '#4ec9f2');     // метка ушла на две строки вниз
+  assert.equal(res.shifts[12], 2);
+});
+
+test('строка между двумя убранными съезжает только на одну клетку', () => {
+  // Убираем строки 11 и 13. Уцелевшая строка 12 лежит между ними, и под ней
+  // убрана всего одна — значит и съехать она должна на одну клетку, а не на две.
+  const grid = emptyGrid();
+  for (const y of [11, 13])
+    for (let x = 0; x < COLS; x++) grid[y][x] = '#f2c14e';
+  grid[12][0] = '#5ad19a';   // метка между убранными
+  grid[10][0] = '#4ec9f2';   // метка выше обеих
+
+  const res = applyClear(grid, [11, 13]);
+
+  assert.equal(res.grid[13][0], '#5ad19a');   // средняя съехала на одну
+  assert.equal(res.shifts[13], 1);
+  assert.equal(res.grid[12][0], '#4ec9f2');   // верхняя — на две
+  assert.equal(res.shifts[12], 2);
 });
