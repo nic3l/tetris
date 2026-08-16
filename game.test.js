@@ -159,3 +159,26 @@ test('строка между двумя убранными съезжает т�
   assert.equal(res.grid[12][0], '#4ec9f2');   // верхняя — на две
   assert.equal(res.shifts[12], 2);
 });
+
+// Насколько далеко поворот вправе переставить фигуру. Меряем по центру рамки:
+// сама смена ориентации центр не двигает, поэтому всё, что здесь видно, —
+// это кик-сдвиг.
+const centre = (x, y, cells) => [x + cells[0].length / 2, y + cells.length / 2];
+
+test('в тесной щели поворот либо не выходит, либо двигает не больше чем на клетку', () => {
+  // Палка стоит в щели шириной в клетку: ряды 5-7 заняты везде, кроме колонки 4.
+  const grid = emptyGrid();
+  for (const y of [5, 6, 7])
+    for (let x = 0; x < COLS; x++) if (x !== 4) grid[y][x] = '#f2c14e';
+
+  const piece = { cells: [[1], [1], [1], [1], [1]], x: 4, y: 3, rot: 0, color: '#7a6cf5' };
+  const next = rotatedPlacement(grid, piece);
+
+  if (next === null) return;   // не повернулась — это допустимый исход
+
+  const [x0, y0] = centre(piece.x, piece.y, piece.cells);
+  const [x1, y1] = centre(next.x, next.y, next.cells);
+
+  assert.ok(Math.abs(x1 - x0) <= 1, `сдвиг вбок ${Math.abs(x1 - x0)} клеток, допустимо не больше 1`);
+  assert.ok(Math.abs(y1 - y0) <= 1, `сдвиг по вертикали ${Math.abs(y1 - y0)} клеток, допустимо не больше 1`);
+});
