@@ -1,0 +1,22 @@
+# Прогон тестов при каждом push.
+# Ставится только Node 22 — запускалка и сравнение у него встроенные,
+# поэтому ни npm install, ни сторонних фреймворков здесь нет.
+
+name: Тесты
+
+on: push
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: node --version
+
+      # Игра лежит в корне репозитория, game.test.js находится сам.
+      - run: node --test
